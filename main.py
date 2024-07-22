@@ -42,8 +42,7 @@ class ChargingGraph:
         return False
 
     def edmonds_karp(self, source, sink):
-        # Algoritmo de fluxo máximo de Edmonds-Karp
-        parent = {}
+        parent = defaultdict(lambda: None)
         max_flow = 0
 
         while self.bfs(source, sink, parent):
@@ -80,18 +79,56 @@ class ChargingGraph:
         for (u, v), capacity in self.capacity.items():
             if "Charger" in u and "Car" in v and car_batteries[v] < 100:
                 current_power += capacity
-        return (
-            current_power + 63
-        )  # Potência base de 63 kW para os carregadores de 21 kW cada
+        return current_power + 63
+
+    def calculate_worst_case_power_usage(self):
+        worst_case_power = sum(
+            7.0 if battery < 80 else 2.0
+            for battery in car_batteries.values()
+            if battery < 100
+        )
+        return worst_case_power + 63
+
+    def adjust_charging_rates(self):
+        total_power = self.get_current_power_usage()
+        cars_slowed_down = set()
+
+        if total_power > self.max_power:
+            cars_charging_high = [
+                (car, cap)
+                for (charger, car), cap in self.capacity.items()
+                if "Car" in car and cap == 7.0 and car_batteries[car] < 80
+            ]
+            cars_charging_high.sort(key=lambda x: car_batteries[x[0]], reverse=True)
+            for car, cap in cars_charging_high:
+                for charger in ["Charger1", "Charger2", "Charger3"]:
+                    if (charger, car) in self.capacity:
+                        self.capacity[(charger, car)] = 2.0
+                        cars_slowed_down.add(car)
+                total_power -= 5.0
+                if total_power <= self.max_power:
+                    break
+
+        return cars_slowed_down
+
+    def restore_charging_rates(self, cars_slowed_down):
+        worst_case_power = self.calculate_worst_case_power_usage()
+
+        if worst_case_power <= self.max_power:
+            for (charger, car), capacity in list(self.capacity.items()):
+                if "Car" in car and capacity == 2.0 and car_batteries[car] < 80:
+                    self.capacity[(charger, car)] = 7.0
+                    if car in cars_slowed_down:
+                        cars_slowed_down.remove(car)
 
 
 # Informações de bateria dos carros em porcentagem
 car_batteries = {
     "Car1": 50,  # Carro 1 com 50% de bateria
     "Car2": 30,  # Carro 2 com 30% de bateria
-    "Car3": 80,  # Carro 3 com 85% de bateria
+    "Car3": 80,  # Carro 3 com 80% de bateria
     "Car4": 20,  # Carro 4 com 20% de bateria
-    "Car5": 90,  # Carro 5 com 95% de bateria
+    "Car5": 90,  # Carro 5 com 90% de bateria
     "Car6": 60,  # Carro 6 com 60% de bateria
     "Car7": 25,  # Carro 7 com 25% de bateria
     "Car8": 75,  # Carro 8 com 75% de bateria
@@ -100,6 +137,7 @@ car_batteries = {
 
 # Variável para rastrear o tempo de carregamento
 last_update_time = {car: time.time() for car in car_batteries}
+slowed_down_cars = set()  # Carros que estão carregando mais lentamente
 
 
 def get_capacity(battery_percentage):
@@ -118,21 +156,16 @@ def charge_batteries():
         current_time = time.time()
         for car in car_batteries:
             if car_batteries[car] < 100:
-                if car_batteries[car] < 80:
-                    if (
-                        current_time - last_update_time[car] >= 2
-                    ):  # Carrega 1% a cada 2 segundos
-                        car_batteries[car] += 1
-                        last_update_time[car] = current_time
-                else:
-                    if (
-                        current_time - last_update_time[car] >= 4
-                    ):  # Carrega 1% a cada 4 segundos
-                        car_batteries[car] += 1
-                        last_update_time[car] = current_time
-                car_batteries[car] = min(
-                    car_batteries[car], 100
-                )  # Garantir que não passe de 100%
+                increment = (
+                    1
+                    if current_time - last_update_time[car]
+                    >= 2 * (2 if car in slowed_down_cars else 1)
+                    else 0
+                )
+                car_batteries[car] = min(car_batteries[car] + increment, 100)
+                last_update_time[car] = (
+                    current_time if increment else last_update_time[car]
+                )
         time.sleep(1)
 
 
@@ -149,7 +182,17 @@ def update_graph():
         capacity = get_capacity(battery)  # Define a capacidade de carregamento
         g.add_edge(chargers[i % 3], car, capacity)
 
-    return g
+    slowed_down_cars.update(g.adjust_charging_rates())
+
+    for car in car_batteries:
+        if car_batteries[car] >= 80:
+            for charger in ["Charger1", "Charger2", "Charger3"]:
+                if (charger, car) in g.capacity and g.capacity[(charger, car)] == 7.0:
+                    g.capacity[(charger, car)] = 2.0
+                    slowed_down_cars.add(car)
+
+    g.restore_charging_rates(slowed_down_cars)
+    return g, slowed_down_cars
 
 
 def format_elapsed_time(elapsed_time):
@@ -185,8 +228,8 @@ app.layout = html.Div(
     [Input("graph-update", "n_intervals")],
 )
 def update_graph_live(n):
-    # Atualiza o grafo e a visualização do uso de energia em tempo real
-    g = update_graph()
+    # Atualiza o gráfico de visualização do grafo
+    g, cars_slowed_down = update_graph()
     G_nx = g.create_networkx_graph()
     pos = hierarchy_pos(G_nx, "T")
 
@@ -217,12 +260,16 @@ def update_graph_live(n):
             size=20,
             color=[
                 (
-                    "green"
-                    if node in car_batteries and car_batteries[node] == 100
+                    "orange"
+                    if node in cars_slowed_down
                     else (
-                        "orange"
-                        if node in car_batteries and car_batteries[node] > 80
-                        else "skyblue"
+                        "green"
+                        if node in car_batteries and car_batteries[node] == 100
+                        else (
+                            "yellow"
+                            if node in car_batteries and car_batteries[node] >= 80
+                            else "skyblue"
+                        )
                     )
                 )
                 for node in G_nx.nodes()
@@ -255,6 +302,48 @@ def update_graph_live(n):
                     opacity=0.8,
                 )
                 for edge in G_nx.edges()
+            ]
+            + [
+                dict(
+                    x=1,
+                    y=1,
+                    xref="paper",
+                    yref="paper",
+                    text="<span style='color:green;'>⬤</span> Carro com 100% de bateria",
+                    showarrow=False,
+                    font=dict(size=12, color="black"),
+                    align="left",
+                ),
+                dict(
+                    x=1,
+                    y=0.95,
+                    xref="paper",
+                    yref="paper",
+                    text="<span style='color:yellow;'>⬤</span> Carro com bateria >= 80%",
+                    showarrow=False,
+                    font=dict(size=12, color="black"),
+                    align="left",
+                ),
+                dict(
+                    x=1,
+                    y=0.90,
+                    xref="paper",
+                    yref="paper",
+                    text="<span style='color:orange;'>⬤</span> Carro que tiveram que carregar lentamente",
+                    showarrow=False,
+                    font=dict(size=12, color="black"),
+                    align="left",
+                ),
+                dict(
+                    x=1,
+                    y=0.85,
+                    xref="paper",
+                    yref="paper",
+                    text="<span style='color:skyblue;'>⬤</span> Carro com bateria < 80%",
+                    showarrow=False,
+                    font=dict(size=12, color="black"),
+                    align="left",
+                ),
             ],
         ),
     )
