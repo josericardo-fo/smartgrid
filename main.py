@@ -18,14 +18,14 @@ class ChargingGraph:
         self.max_power = 102.5  # Capacidade máxima de carregamento (em kW)
 
     def add_edge(self, u, v, cap):
-        # Adiciona uma aresta entre os nós u e v com capacidade cap
+        """Adiciona uma aresta ao grafo com uma capacidade específica"""
         self.graph[u].append(v)
         self.graph[v].append(u)
         self.capacity[(u, v)] = cap
         self.capacity[(v, u)] = 0
 
     def bfs(self, source, sink, parent):
-        # Busca em largura para encontrar um caminho aumentante no grafo residual
+        """Busca em largura para encontrar um caminho aumentante no grafo residual"""
         visited = set()
         queue = deque([source])
         visited.add(source)
@@ -42,6 +42,7 @@ class ChargingGraph:
         return False
 
     def edmonds_karp(self, source, sink):
+        """Algoritmo de Edmonds-Karp para encontrar o fluxo máximo no grafo"""
         parent = defaultdict(lambda: None)
         max_flow = 0
 
@@ -65,7 +66,11 @@ class ChargingGraph:
         return max_flow
 
     def create_networkx_graph(self):
-        # Cria um grafo NetworkX para visualização
+        """Cria um objeto NetworkX DiGraph a partir do grafo atual
+
+        Returns:
+            nx.DiGraph: Objeto NetworkX DiGraph
+        """
         G = nx.DiGraph()
         for u in self.graph:
             for v in self.graph[u]:
@@ -74,7 +79,11 @@ class ChargingGraph:
         return G
 
     def get_current_power_usage(self):
-        # Calcula a potência atual utilizada no carregamento dos carros
+        """Calcula o uso de energia atual no sistema
+
+        Returns:
+            float: Uso de energia atual (em kW)
+        """
         current_power = 0
         for (u, v), capacity in self.capacity.items():
             if "Charger" in u and "Car" in v and car_batteries[v] < 100:
@@ -82,6 +91,11 @@ class ChargingGraph:
         return current_power + 63
 
     def calculate_worst_case_power_usage(self):
+        """Calcula o uso de energia no pior caso no sistema
+
+        Returns:
+            float: Uso de energia no pior caso (em kW)
+        """
         worst_case_power = sum(
             7.0 if battery < 80 else 2.0
             for battery in car_batteries.values()
@@ -90,6 +104,11 @@ class ChargingGraph:
         return worst_case_power + 63
 
     def adjust_charging_rates(self):
+        """Ajusta as taxas de carregamento para evitar sobrecarga
+
+        Returns:
+            set: Conjunto de carros que tiveram que carregar lentamente
+        """
         total_power = self.get_current_power_usage()
         cars_slowed_down = set()
 
@@ -112,6 +131,11 @@ class ChargingGraph:
         return cars_slowed_down
 
     def restore_charging_rates(self, cars_slowed_down):
+        """Restaura as taxas de carregamento dos carros que tiveram que carregar lentamente para evitar sobrecarga
+
+        Args:
+            cars_slowed_down (set): Conjunto de carros que tiveram que carregar lentamente
+        """
         worst_case_power = self.calculate_worst_case_power_usage()
 
         if worst_case_power <= self.max_power:
@@ -141,7 +165,14 @@ slowed_down_cars = set()  # Carros que estão carregando mais lentamente
 
 
 def get_capacity(battery_percentage):
-    # Define a capacidade de carregamento baseada na porcentagem da bateria
+    """Define a capacidade de carregamento com base na porcentagem de bateria
+
+    Args:
+        battery_percentage (int): Porcentagem de bateria do carro
+
+    Returns:
+        float: Capacidade de carregamento (em kW)
+    """
     if battery_percentage < 80:
         return 7.0  # Capacidade alta para baterias < 80% (em kW)
     elif battery_percentage < 100:
@@ -151,7 +182,7 @@ def get_capacity(battery_percentage):
 
 
 def charge_batteries():
-    # Simula o processo de carregamento das baterias dos carros
+    """Simula o carregamento das baterias dos carros a cada segundo"""
     while True:
         current_time = time.time()
         for car in car_batteries:
@@ -170,7 +201,12 @@ def charge_batteries():
 
 
 def update_graph():
-    # Atualiza o grafo e as capacidades das arestas
+    """Atualiza o grafo de carregamento e ajusta as taxas de carregamento conforme necessário
+
+    Returns:
+        fig (go.Figure): Figura do gráfico de visualização do grafo
+        power_usage_text (str): Texto com o uso de energia atual
+    """
     g = ChargingGraph()
     g.add_edge("T", "Charger1", 21)
     g.add_edge("T", "Charger2", 21)
@@ -196,7 +232,14 @@ def update_graph():
 
 
 def format_elapsed_time(elapsed_time):
-    # Formata o tempo decorrido em minutos e segundos
+    """Formata o tempo decorrido em minutos e segundos
+
+    Args:
+        elapsed_time (int): Tempo decorrido em segundos
+
+    Returns:
+        str: Tempo decorrido formatado em minutos e segundos
+    """
     minutes, seconds = divmod(elapsed_time, 60)
     return f"Tempo decorrido: {minutes:02d}:{seconds:02d}"
 
@@ -362,7 +405,22 @@ def update_timer(n):
 
 
 def hierarchy_pos(G, root, width=1.0, vert_gap=0.2, vert_loc=0, xcenter=0.5):
-    # Calcula a posição hierárquica dos nós para visualização
+    """Posiciona os nós de um grafo hierárquico em camadas
+
+    Args:
+        G (nx.DiGraph): Grafo hierárquico
+        root (node): Nó raiz
+        width (float, optional): Largura da camada. Defaults to 1.0.
+        vert_gap (float, optional): Espaçamento vertical entre camadas. Defaults to 0.2.
+        vert_loc (int, optional): Posição vertical inicial. Defaults to 0.
+        xcenter (float, optional): Posição horizontal inicial. Defaults to 0.5.
+
+    Raises:
+        TypeError: G deve ser um DiGraph
+
+    Returns:
+        dict: Dicionário com as posições dos nós
+    """
     pos = {root: (xcenter, vert_loc)}
     children = list(G.neighbors(root))
     if not isinstance(G, nx.DiGraph):
