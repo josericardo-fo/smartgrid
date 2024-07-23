@@ -372,7 +372,7 @@ def update_graph_live(n):
                     y=0.90,
                     xref="paper",
                     yref="paper",
-                    text="<span style='color:orange;'>⬤</span> Carro que tiveram que carregar lentamente",
+                    text="<span style='color:orange;'>⬤</span> Carregamento lento devido à otimização",
                     showarrow=False,
                     font=dict(size=12, color="black"),
                     align="left",
